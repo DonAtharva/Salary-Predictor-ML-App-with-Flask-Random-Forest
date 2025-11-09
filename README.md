@@ -27,5 +27,4 @@ It features a **modern dark-neon UI**, **real-time form validation**, and a **ci
 
 ---
 
-## 📁 Project Structure
 
