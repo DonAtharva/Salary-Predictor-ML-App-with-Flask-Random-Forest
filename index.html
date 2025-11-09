@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Expected CTC Predictor — Neon</title>
+  <style>
+    /* Dark Neon theme */
+    :root{
+      --bg:#05060a;
+      --card:#071022;
+      --panel:#0b1b2a;
+      --muted:#9fb6c7;
+      --accent:#00e5ff;
+      --accent2:#8b5cff;
+      --danger:#ff6b6b;
+      --success:#7ee7c6;
+      --glass: rgba(255,255,255,0.03);
+      --glow: 0 6px 30px rgba(0, 230, 255, 0.06);
+    }
+    html,body{height:100%; margin:0; background:linear-gradient(180deg,#000814 0%, #05060a 100%); font-family: "Segoe UI", Roboto, sans-serif; color:#e6eef6;}
+    .wrap{display:flex; justify-content:center; padding:36px;}
+    .card{width:980px; background:linear-gradient(180deg,var(--card),#04111a); border-radius:14px; padding:22px; box-shadow: 0 12px 40px rgba(2,10,30,0.7); border:1px solid rgba(0,255,255,0.04);}
+    header{display:flex; align-items:center; gap:14px;}
+    .logo{width:56px; height:56px; border-radius:10px; background:linear-gradient(45deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; color:#001219; font-weight:800; font-size:20px;}
+    h1{margin:0; color:var(--success); font-size:20px;}
+    p.lead{margin:4px 0 12px 0; color:var(--muted);}
+
+    .grid{display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; margin-top:14px;}
+    label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px;}
+    input[type="text"], input[type="number"], select{
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.04); background:var(--glass); color:#e6eef6; font-size:14px;
+      box-shadow: var(--glow);
+    }
+    input:focus, select:focus{ outline: 2px solid rgba(0,229,255,0.12); }
+
+    .full{grid-column:1 / -1;}
+    .actions{display:flex; justify-content:space-between; align-items:center; margin-top:14px;}
+    .btn{background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#001219; padding:10px 18px; border-radius:10px; border:none; font-weight:700; cursor:pointer; box-shadow:0 8px 30px rgba(139,92,255,0.12);}
+    .btn:hover{ transform: translateY(-2px); }
+
+    .result-wrap{margin-top:18px; display:flex; gap:12px; align-items:center;}
+    .prediction-card{flex:1; background:linear-gradient(180deg, rgba(0,10,16,0.6), rgba(1,6,12,0.6)); padding:16px; border-radius:10px; border:1px solid rgba(0,229,255,0.06); box-shadow:0 12px 40px rgba(0,0,0,0.6); text-align:center;}
+    .prediction-value{font-size:28px; color:var(--accent); font-weight:800; text-shadow: 0 6px 30px rgba(0,229,255,0.06); opacity:0; transform: translateY(6px);}
+
+    .hint{color:var(--muted); font-size:13px; margin-top:6px;}
+    .errors{background: rgba(255,20,20,0.06); border:1px solid rgba(255,20,20,0.08); padding:12px; border-radius:8px; color:#ffd6d6; margin-top:12px;}
+    .inline-error{font-size:12px; color:var(--danger); margin-top:6px;}
+    .field-error{ box-shadow: 0 0 0 3px rgba(255,107,107,0.06) !important; border-color: rgba(255,107,107,0.18) !important; }
+
+    /* cinematic glow when shown */
+    .glow {
+      animation: glowPulse 3s ease-in-out;
+      box-shadow: 0 12px 60px rgba(139,92,255,0.18), 0 20px 120px rgba(0,229,255,0.06);
+      border: 1px solid rgba(0,229,255,0.08);
+    }
+    @keyframes glowPulse {
+      0% { transform: scale(0.99); opacity: 0.0; }
+      20% { opacity: 0.4; transform: scale(1.01); }
+      40% { opacity: 1; transform: scale(1.00); }
+      100% { opacity: 1; transform: scale(1.00); }
+    }
+
+    /* small responsive */
+    @media (max-width: 980px) {
+      .card{width:95%}
+      .grid{grid-template-columns: 1fr;}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <div class="logo">CTC</div>
+        <div>
+          <h1>Expected CTC Predictor</h1>
+          <p class="lead">Enter candidate details — the prediction will reveal with a cinematic animation.</p>
+        </div>
+      </header>
+
+      {% if error_messages %}
+        <div class="errors">
+          <strong>Fix these errors:</strong>
+          <ul>
+            {% for e in error_messages %}
+              <li>{{ e }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <form action="/predict" method="post" id="predict-form">
+        <div class="grid">
+          {% for col in numeric_cols %}
+            <div>
+              <label>{{ col.replace('_',' ') }}</label>
+              <input
+                type="number"
+                name="{{ col }}"
+                id="{{ col }}"
+                step="any"
+                min="{% if col == 'Total_Experience' %}0{% else %}0{% endif %}"
+                max="{% if col == 'Total_Experience' %}60{% else %}{% endif %}"
+                value="{{ input_values.get(col, '') if input_values else '' }}"
+                class="{% if field_errors and field_errors.get(col) %}field-error{% endif %}">
+              {% if field_errors and field_errors.get(col) %}
+                <div class="inline-error">⚠️ {{ field_errors.get(col) }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+
+          {% for col in categorical_cols %}
+            <div>
+              <label>{{ col.replace('_',' ') }}</label>
+              <select name="{{ col }}" id="{{ col }}" class="{% if field_errors and field_errors.get(col) %}field-error{% endif %}">
+                <option value="">-- select --</option>
+                {% for opt in dropdowns[col] %}
+                  <option value="{{ opt }}"
+                    {% if input_values and input_values.get(col) is defined and input_values.get(col) == opt %}selected{% endif %}>
+                    {{ opt }}
+                  </option>
+                {% endfor %}
+              </select>
+              {% if field_errors and field_errors.get(col) %}
+                <div class="inline-error">⚠️ {{ field_errors.get(col) }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+
+          <div class="full">
+            <small class="hint">Graduation years: {{ 1990 }}–{{ 2025 }}. Max experience: {{ 60 }} years. Leave unknowns blank.</small>
+          </div>
+        </div>
+
+        <div class="actions">
+          <div style="color:var(--muted); font-size:13px;">Tip: Use realistic values for best predictions</div>
+          <button class="btn" type="submit">Predict Salary</button>
+        </div>
+      </form>
+
+      <div class="result-wrap">
+        <div class="prediction-card" id="prediction-card" style="display:none;">
+          <div class="prediction-value" id="prediction-value">₹ 0</div>
+          <div class="hint" style="margin-top:8px; color:var(--muted);">Predicted expected CTC</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script id="server-data" type="application/json">{{ prediction_text|tojson }}</script>
+  <script>
+    // Read server-rendered JSON safely from a non-JS script tag to avoid JS parser errors in editors
+    const _serverDataEl = document.getElementById('server-data');
+    const predictionFromServer = _serverDataEl ? JSON.parse(_serverDataEl.textContent || 'null') : null;
+    (function() {
+      if (predictionFromServer) {
+        // predictionFromServer is a string like "₹ 1,234,567 per year"
+        const cleaned = predictionFromServer.replace(/,/g,'');
+        const numMatch = cleaned.match(/\d+/g);
+        let target = 0;
+        if (numMatch && numMatch.length) {
+          target = parseInt(numMatch.join(''), 10);
+        }
+
+        const card = document.getElementById('prediction-card');
+        const val = document.getElementById('prediction-value');
+        card.style.display = 'block';
+        card.classList.add('glow');
+
+        const duration = 3000;
+        const start = performance.now();
+        function animate(now) {
+          const elapsed = now - start;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = 1 - (1 - progress) * (1 - progress); // easeOutQuad
+          const current = Math.round(eased * target);
+          val.textContent = '₹ ' + current.toLocaleString();
+          val.style.opacity = 1;
+          val.style.transform = 'translateY(0)';
+          if (progress < 1) {
+            requestAnimationFrame(animate);
+          } else {
+            val.textContent = '₹ ' + target.toLocaleString() + ' per year';
+            card.animate([
+              { transform: 'scale(1)' }, { transform: 'scale(1.01)' }, { transform: 'scale(1)' }
+            ], { duration: 700, easing: 'ease-out' });
+          }
+        }
+        requestAnimationFrame(animate);
+      } else {
+        const card = document.getElementById('prediction-card');
+        card.style.display = 'none';
+      }
+    })();
+  </script>
+</body>
+</html>
